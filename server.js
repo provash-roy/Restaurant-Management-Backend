@@ -6,6 +6,7 @@ const { ObjectId } = require("mongodb");
 
 require("dotenv").config();
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+const jwt = require("jsonwebtoken");
 
 const Product = require("./models/Product");
 const Order = require("./models/Order");
@@ -17,6 +18,12 @@ const port = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(express.json());
+app.use(
+  cors({
+    origin: "http://localhost:5173",
+    credentials: true,
+  })
+);
 
 // MongoDB connection
 mongoose
@@ -26,6 +33,26 @@ mongoose
   })
   .then(() => console.log("Connected to MongoDB"))
   .catch((err) => console.error("MongoDB connection error:", err));
+
+function verifyToken(req, res, next) {
+  if (!req.headers.authorization) return res.sendStatus(401);
+  const token = req.headers.authorization.split(" ")[1];
+
+  jwt.verify(token, process.env.ACCESS_SECRATE_KEY, (err, decoded) => {
+    if (err) return res.sendStatus(403);
+    req.user = decoded;
+    next();
+  });
+}
+
+app.post("/jwt", (req, res) => {
+  const user = req.body;
+  const token = jwt.sign(user, process.env.ACCESS_SECRATE_KEY, {
+    expiresIn: "15m",
+  });
+
+  res.send({ token });
+});
 
 // Get All Menu Items
 app.get("/menu", async (req, res) => {
@@ -63,6 +90,9 @@ app.post("/users", async (req, res) => {
 
 app.post("/create-payment-intent", async (req, res) => {
   const { totalPrice } = req.body;
+  if (typeof totalPrice !== "number" || totalPrice <= 0) {
+    return res.status(400).json({ message: "Invalid totalPrice" });
+  }
 
   try {
     const paymentIntent = await stripe.paymentIntents.create({
@@ -131,10 +161,13 @@ app.get("/orders", async (req, res) => {
   }
 });
 
-// ✅ Promote User to Admin
+//Promote User to Admin
 app.patch("/users/admin/:id", async (req, res) => {
   const id = req.params.id;
-  const filter = { _id: new ObjectId(id) };
+  if (!ObjectId.isValid(id)) {
+    return res.status(400).json({ message: "Invalid ID" });
+  }
+
   const updateDoc = {
     $set: {
       role: "admin",
@@ -142,7 +175,7 @@ app.patch("/users/admin/:id", async (req, res) => {
   };
 
   try {
-    const result = await User.updateOne(filter, updateDoc); // ✅ Fixed
+    const result = await User.updateOne(filter, updateDoc);
     res.send(result);
   } catch (err) {
     console.error("Error updating user role:", err);
@@ -174,7 +207,7 @@ app.delete("/orders/:id", async (req, res) => {
 app.delete("/users/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const deletedUser = await User.findByIdAndDelete(id); // ✅ renamed variable
+    const deletedUser = await User.findByIdAndDelete(id);
 
     if (!deletedUser) {
       return res.status(404).json({ message: "User not found" });
