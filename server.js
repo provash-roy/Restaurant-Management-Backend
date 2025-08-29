@@ -247,6 +247,40 @@ app.post("/create-payment-intent", async (req, res) => {
     res.status(500).send({ error: error.message });
   }
 });
+app.get("/menu/:id", async (req, res) => {
+  const id = req.params.id;
+  const result = await Product.findOne({ _id: new ObjectId(id) });
+  res.json(result);
+});
+
+app.patch("/menu/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const body = req.body;
+
+    const updatedDoc = await Product.findByIdAndUpdate(
+      id,
+      { $set: body },
+      { new: true }
+    );
+
+    if (!updatedDoc) {
+      return res.status(404).json({ error: "Item not found" });
+    }
+
+    res.json(updatedDoc);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+app.delete("/menu/:id", async (req, res) => {
+  const id = req.params.id;
+  const query = { _id: new ObjectId(id) };
+  const result = await Product.deleteOne(query);
+  res.send(result);
+});
 
 // Save Payment & Delete Related Orders
 app.post("/payment", async (req, res) => {
