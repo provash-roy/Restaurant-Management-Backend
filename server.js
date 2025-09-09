@@ -1,14 +1,11 @@
 const express = require("express");
 const cors = require("cors");
 const mongoose = require("mongoose");
-
 const { ObjectId } = require("mongodb");
-
 require("dotenv").config();
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const jwt = require("jsonwebtoken");
 
-// Import Models
 const Product = require("./models/Product");
 const Order = require("./models/Order");
 const User = require("./models/User");
@@ -36,11 +33,11 @@ mongoose
   .then(() => console.log("Connected to MongoDB"))
   .catch((err) => console.error("MongoDB connection error:", err));
 
-// JWT Verification Middleware
+// Verify JWT token from Authorization header
 function verifyToken(req, res, next) {
   if (!req.headers.authorization) return res.sendStatus(401);
-  const token = req.headers.authorization.split(" ")[1];
 
+  const token = req.headers.authorization.split(" ")[1];
   jwt.verify(token, process.env.ACCESS_SECRATE_KEY, (err, decoded) => {
     if (err) return res.sendStatus(403);
     req.decoded = decoded;
@@ -48,24 +45,21 @@ function verifyToken(req, res, next) {
   });
 }
 
-// Admin Role Verification Middleware
+// Verify Admin role based on decoded JWT
 const verifyAdmin = async (req, res, next) => {
   const email = req.decoded.email;
 
-  if (!email) {
-    return res.status(401).send({ message: "Unauthorized Access" });
-  }
+  if (!email) return res.status(401).send({ message: "Unauthorized Access" });
 
   const user = await User.findOne({ email });
   const isAdmin = user?.role === "admin";
 
-  if (!isAdmin) {
-    return res.status(403).send({ message: "Forbidden Access" });
-  }
+  if (!isAdmin) return res.status(403).send({ message: "Forbidden Access" });
+
   next();
 };
 
-// JWT Token Generation
+// Generate JWT token
 app.post("/jwt", (req, res) => {
   const user = req.body;
   const token = jwt.sign(user, process.env.ACCESS_SECRATE_KEY, {
@@ -76,7 +70,7 @@ app.post("/jwt", (req, res) => {
 
 // Product Routes
 
-// Get All Menu Items
+// Get all menu items
 app.get("/menu", async (req, res) => {
   try {
     const products = await Product.find();
@@ -86,7 +80,7 @@ app.get("/menu", async (req, res) => {
   }
 });
 
-// Add New Menu Item
+// Add a new menu item
 app.post("/menu", async (req, res) => {
   try {
     const newProduct = new Product(req.body);
@@ -98,9 +92,45 @@ app.post("/menu", async (req, res) => {
   }
 });
 
+// Get a single menu item by ID
+app.get("/menu/:id", async (req, res) => {
+  const id = req.params.id;
+  const result = await Product.findOne({ _id: new ObjectId(id) });
+  res.json(result);
+});
+
+// Update menu item by ID
+app.patch("/menu/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const body = req.body;
+
+    const updatedDoc = await Product.findByIdAndUpdate(
+      id,
+      { $set: body },
+      { new: true }
+    );
+
+    if (!updatedDoc) return res.status(404).json({ error: "Item not found" });
+
+    res.json(updatedDoc);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+//Delete menu item by ID
+app.delete("/menu/:id", async (req, res) => {
+  const id = req.params.id;
+  const query = { _id: new ObjectId(id) };
+  const result = await Product.deleteOne(query);
+  res.send(result);
+});
+
 // Order Routes
 
-// Place an Order
+// Place a new order
 app.post("/orders", async (req, res) => {
   try {
     const newOrder = new Order(req.body);
@@ -112,13 +142,12 @@ app.post("/orders", async (req, res) => {
   }
 });
 
-// Get Orders by User Email
+// Get orders by user email
 app.get("/orders", async (req, res) => {
   const email = req.query.email;
 
-  if (!email) {
+  if (!email)
     return res.status(400).json({ message: "Email query param is required" });
-  }
 
   try {
     const orders = await Order.find({ email });
@@ -128,15 +157,14 @@ app.get("/orders", async (req, res) => {
   }
 });
 
-// Delete Order by ID
+// Delete order by ID
 app.delete("/orders/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const deletedOrder = await Order.findByIdAndDelete(id);
 
-    if (!deletedOrder) {
+    if (!deletedOrder)
       return res.status(404).json({ message: "Order not found" });
-    }
 
     res.status(200).json({
       message: "Order deleted successfully",
@@ -150,7 +178,7 @@ app.delete("/orders/:id", async (req, res) => {
 
 // User Routes
 
-// Create User
+// Create a new user
 app.post("/users", async (req, res) => {
   try {
     const newUser = new User(req.body);
@@ -162,20 +190,15 @@ app.post("/users", async (req, res) => {
   }
 });
 
-// Get All Users
+// Get all users
 app.get("/users", async (req, res) => {
   const users = await User.find();
   res.json(users);
 });
 
-// Check Admin by Email
-app.get("/users/admin/:email", verifyToken, async (req, res) => {
+// Check if user is admin by email
+app.get("/users/admin/:email", async (req, res) => {
   const email = req.params.email;
-
-  if (email !== req.decoded.email) {
-    return res.status(401).send({ message: "Unauthorized Access" });
-  }
-
   try {
     const user = await User.findOne({ email });
     const admin = user?.role === "admin";
@@ -186,17 +209,14 @@ app.get("/users/admin/:email", verifyToken, async (req, res) => {
   }
 });
 
-// Promote User to Admin
+// Promote user to admin
 app.patch("/users/admin/:id", async (req, res) => {
   const id = req.params.id;
-  if (!ObjectId.isValid(id)) {
+  if (!ObjectId.isValid(id))
     return res.status(400).json({ message: "Invalid ID" });
-  }
 
   const filter = { _id: new ObjectId(id) };
-  const updateDoc = {
-    $set: { role: "admin" },
-  };
+  const updateDoc = { $set: { role: "admin" } };
 
   try {
     const result = await User.updateOne(filter, updateDoc);
@@ -207,15 +227,14 @@ app.patch("/users/admin/:id", async (req, res) => {
   }
 });
 
-// Delete User by ID
+// Delete user by ID
 app.delete("/users/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const deletedUser = await User.findByIdAndDelete(id);
 
-    if (!deletedUser) {
+    if (!deletedUser)
       return res.status(404).json({ message: "User not found" });
-    }
 
     res.status(200).json({
       message: "User deleted successfully",
@@ -228,12 +247,13 @@ app.delete("/users/:id", async (req, res) => {
 });
 
 // Payment Routes
-// Create Payment Intent (Stripe)
+
+// Create Stripe payment intent
 app.post("/create-payment-intent", async (req, res) => {
   const { totalPrice } = req.body;
-  if (typeof totalPrice !== "number" || totalPrice <= 0) {
+
+  if (typeof totalPrice !== "number" || totalPrice <= 0)
     return res.status(400).json({ message: "Invalid totalPrice" });
-  }
 
   try {
     const paymentIntent = await stripe.paymentIntents.create({
@@ -247,42 +267,8 @@ app.post("/create-payment-intent", async (req, res) => {
     res.status(500).send({ error: error.message });
   }
 });
-app.get("/menu/:id", async (req, res) => {
-  const id = req.params.id;
-  const result = await Product.findOne({ _id: new ObjectId(id) });
-  res.json(result);
-});
 
-app.patch("/menu/:id", async (req, res) => {
-  try {
-    const id = req.params.id;
-    const body = req.body;
-
-    const updatedDoc = await Product.findByIdAndUpdate(
-      id,
-      { $set: body },
-      { new: true }
-    );
-
-    if (!updatedDoc) {
-      return res.status(404).json({ error: "Item not found" });
-    }
-
-    res.json(updatedDoc);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Internal Server Error" });
-  }
-});
-
-app.delete("/menu/:id", async (req, res) => {
-  const id = req.params.id;
-  const query = { _id: new ObjectId(id) };
-  const result = await Product.deleteOne(query);
-  res.send(result);
-});
-
-// Save Payment & Delete Related Orders
+// Save payment and delete related orders
 app.post("/payment", async (req, res) => {
   try {
     const payment = req.body;
@@ -304,7 +290,7 @@ app.post("/payment", async (req, res) => {
   }
 });
 
-// Get Payment History by Email
+// Get payment history by user email
 app.get("/payments/:email", async (req, res) => {
   try {
     const email = req.params.email;
@@ -316,7 +302,6 @@ app.get("/payments/:email", async (req, res) => {
   }
 });
 
-// Start the Server
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
 });
